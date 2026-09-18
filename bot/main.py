@@ -1,133 +1,195 @@
 """
-Simple working bot based on reference implementation.
+Production-grade Telegram Media Downloader Bot.
+
+Main entry point with full async architecture, single-instance lock,
+graceful shutdown, and comprehensive error handling.
 """
 
-import os
 import logging
+import sys
 import asyncio
-import tempfile
-import shutil
 from pathlib import Path
 
-import yt_dlp
-from dotenv import load_dotenv
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import (
     Application,
     CommandHandler,
+    CallbackQueryHandler,
     MessageHandler,
     filters,
     ContextTypes,
 )
 
-load_dotenv()
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ Token not found!")
+from core.config import settings
+from core.logger import StructuredLogger
+from infrastructure.queue import AsyncDownloadQueue
+from infrastructure.storage import StorageManager
+from infrastructure.lock import ensure_single_instance
 
-BASE_DIR = Path(__file__).parent
-DOWNLOAD_PATH = BASE_DIR / "data" / "storage" / "temp"
-DOWNLOAD_PATH.mkdir(parents=True, exist_ok=True)
+from bot.handlers.callback import CallbackQueryHandler as BotCallbackQueryHandler
+from bot.handlers.message import MessageHandler as BotMessageHandler
+from bot.services.media_service import MediaDownloadService
 
-logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
+struct_logger = StructuredLogger(component="main")
+
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    level=getattr(logging, settings.LOG_LEVEL.upper()),
+)
 logger = logging.getLogger(__name__)
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command."""
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /start command."""
     await update.message.reply_text(
-        "🎵 Welcome! Send me a URL from YouTube, SoundCloud, or Instagram."
+        "Welcome! Send me a URL from YouTube, SoundCloud, or Instagram."
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Help command."""
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /help command."""
     await update.message.reply_text(
-        "📖 Send me a media URL and I'll download it for you."
+        "Send me a media URL and I'll download it for you."
     )
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel command."""
-    context.user_data["cancelled"] = True
-    await update.message.reply_text("✅ Cancelled.")
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /cancel command."""
+    if "pending_url" in context.user_data:
+        del context.user_data["pending_url"]
+    await update.message.reply_text("Cancelled.")
 
 
-async def download_media(url: str, output_dir: Path, format_type: str) -> Path:
-    """Download media using yt-dlp."""
-    ydl_opts = {
-        "outtmpl": str(output_dir / "%(title)s.%(ext)s"),
-        "format": "bestaudio/best",
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
-    }
-    
-    loop = asyncio.get_event_loop()
-    def do_download():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            return Path(ydl.prepare_filename(info)).with_suffix(".mp3")
-    
-    return await loop.run_in_executor(None, do_download)
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global error handler."""
+    logger.error("Bot error", exc_info=context.error)
 
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming messages."""
-    text = update.message.text.strip()
-    status_msg = await update.message.reply_text("🔍 Processing...")
-    context.user_data["cancelled"] = False
-    
-    try:
-        temp_dir = Path(tempfile.mkdtemp())
+    if isinstance(update, Update) and update.effective_message:
         try:
-            file_path = await download_media(text, temp_dir, "audio")
-            size_mb = file_path.stat().st_size / (1024 * 1024)
-            
-            if size_mb > 50:
-                await status_msg.edit_text(f"⚠️ File too large: {size_mb:.1f}MB")
-                file_path.unlink()
-                return
-            
-            await status_msg.edit_text("📤 Sending...")
-            with open(file_path, "rb") as media:
-                await context.bot.send_audio(
-                    chat_id=update.effective_chat.id,
-                    audio=media,
-                    caption="✅ Downloaded!"
-                )
-            await status_msg.delete()
-            logger.info(f"✅ Success: {file_path.name}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-    except Exception as e:
-        logger.error(f"Failed: {e}")
-        await status_msg.edit_text(f"❌ Failed: {str(e)[:200]}")
+            await update.effective_message.reply_text(
+                "An error occurred. Please try again."
+            )
+        except Exception:
+            pass
 
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Error handler."""
-    logger.error(f"Error: {context.error}")
+async def _safe_delete_webhook(app: Application) -> None:
+    """Delete webhook without raising on network errors."""
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook deleted successfully")
+    except TelegramError as exc:
+        logger.warning("delete_webhook_failed: %s", exc)
+    except Exception as exc:
+        logger.warning("delete_webhook_unexpected_error: %s", exc)
 
 
-def main():
-    """Main entry point."""
-    print("🚀 Starting bot...")
-    app = Application.builder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("cancel", cancel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(error_handler)
-    
-    print("✅ Bot running...")
-    app.run_polling()
+async def _safe_get_me(app: Application) -> None:
+    """Validate bot token by calling getMe."""
+    try:
+        me = await app.bot.get_me()
+        logger.info("bot_authenticated: id=%s username=%s", me.id, me.username)
+    except TelegramError as exc:
+        logger.error("get_me_failed: %s", exc, exc_info=True)
+        raise SystemExit(f"Invalid bot token or network issue: {exc}")
+
+
+def check_ffmpeg() -> bool:
+    """Check if ffmpeg is available."""
+    import shutil
+    return shutil.which("ffmpeg") is not None
+
+
+def create_bot_application() -> Application:
+    """Create and configure the Telegram bot application."""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN not configured")
+        sys.exit(1)
+
+    ffmpeg_available = check_ffmpeg()
+    if not ffmpeg_available:
+        logger.warning("ffmpeg_not_found: Downloads will use original format")
+
+    download_queue = AsyncDownloadQueue()
+    storage_manager = StorageManager()
+
+    media_service = MediaDownloadService(
+        download_queue=download_queue,
+        storage_manager=storage_manager,
+        ffmpeg_available=ffmpeg_available,
+    )
+
+    message_handler = BotMessageHandler(media_service=media_service)
+    callback_handler = BotCallbackQueryHandler(media_service=media_service)
+
+    application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("cancel", cancel_command))
+
+    application.add_handler(
+        MessageHandler(
+            filters=filters.TEXT & ~filters.COMMAND,
+            callback=message_handler.handle_message,
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            callback_handler.handle_format_selection,
+            pattern=r"^fmt:(audio|video):[a-f0-9-]+$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            callback_handler.handle_quality_selection,
+            pattern=r"^qual:(best|1080p|720p|480p):[a-f0-9-]+$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            callback_handler.handle_cancel,
+            pattern=r"^cancel:[a-f0-9-]+$",
+        )
+    )
+
+    application.add_error_handler(error_handler)
+
+    return application
+
+
+def main() -> None:
+    """Main entry point for the bot."""
+    print("Starting Telegram Media Downloader Bot...")
+
+    lock = ensure_single_instance()
+    print(f"Single instance lock acquired (PID: {lock.pid})")
+
+    try:
+        app = create_bot_application()
+        print("Bot configured successfully")
+        print("Starting polling...")
+        print("Press Ctrl+C to stop")
+
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    except Exception as exc:
+        logger.error("bot_startup_failed: %s", exc, exc_info=True)
+        print(f"Bot failed to start: {exc}")
+        sys.exit(1)
+    finally:
+        print("Cleaning up...")
+        lock.release()
+        print("Shutdown complete")
 
 
 if __name__ == "__main__":
     main()
+

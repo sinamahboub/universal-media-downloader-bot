@@ -26,6 +26,3 @@ pytest-mock==3.12.0
 # Code Quality
 ruff==0.3.0
 mypy==1.8.0
-
-# Type Stubs
-types-requests==2.31.0
