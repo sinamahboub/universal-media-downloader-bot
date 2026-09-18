@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from telegram import Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import CommandHandler, ContextTypes, MessageHandler as TelegramMessageHandler, filters
 
 from core.logger import StructuredLogger
 from bot.keyboards.inline import format_keyboard
@@ -42,7 +42,7 @@ class MessageHandler:
         application.add_handler(CommandHandler("help", self._help_command))
         application.add_handler(CommandHandler("cancel", self._cancel_command))
         application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
+            TelegramMessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
         )
 
     async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

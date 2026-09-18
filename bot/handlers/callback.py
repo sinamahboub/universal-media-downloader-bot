@@ -40,15 +40,26 @@ class CallbackQueryHandler:
         Args:
             application: Telegram Application instance
         """
-        application.add_handler(
-            CallbackQueryHandler(self._handle_format_selection, pattern=r"^fmt:")
-        )
-        application.add_handler(
-            CallbackQueryHandler(self._handle_quality_selection, pattern=r"^qual:")
-        )
-        application.add_handler(
-            CallbackQueryHandler(self._handle_cancel, pattern=r"^cancel:")
-        )
+        # In v22, create handler with callback as first positional argument
+        from telegram.ext import CallbackQueryHandler as CQH
+        
+        # Create handler instances properly for v22
+        handler = CQH(self._route_callback)
+        application.add_handler(handler)
+
+    async def _route_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Route callback to appropriate handler based on data prefix."""
+        query = update.callback_query
+        data = query.data or ""
+        
+        if data.startswith("fmt:"):
+            await self._handle_format_selection(update, context)
+        elif data.startswith("qual:"):
+            await self._handle_quality_selection(update, context)
+        elif data.startswith("cancel:"):
+            await self._handle_cancel(update, context)
+        else:
+            await query.answer("Unknown action")
 
     async def _handle_format_selection(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

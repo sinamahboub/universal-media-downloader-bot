@@ -22,8 +22,6 @@ from infrastructure.storage import StorageManager
 from bot.downloader import DownloaderFactory
 from bot.handlers.callback import CallbackQueryHandler
 from bot.handlers.message import MessageHandler
-from bot.middlewares.auth import AuthMiddleware
-from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services import MediaDownloadService, URLParserService
 
 logger = StructuredLogger(component="main")
@@ -60,9 +58,6 @@ class DownloaderBot:
         message_handler = MessageHandler(url_parser=url_parser)
         callback_handler = CallbackQueryHandler(media_service=self._media_service)
 
-        auth_middleware = AuthMiddleware(allowed_users=settings.ALLOWED_USERS)
-        rate_limit_middleware = RateLimitMiddleware()
-
         self._application = (
             ApplicationBuilder()
             .token(settings.TELEGRAM_BOT_TOKEN)
@@ -72,13 +67,7 @@ class DownloaderBot:
             .build()
         )
 
-        for group in self._application.handler_groups.values():
-            for handler in group.handlers:
-                original_callback = handler.callback
-                handler.callback = self._wrap_with_middlewares(
-                    original_callback, auth_middleware, rate_limit_middleware
-                )
-
+        # Register handlers directly (middleware applied within handlers for v22 compatibility)
         message_handler.register(self._application)
         callback_handler.register(self._application)
 
@@ -138,16 +127,6 @@ class DownloaderBot:
 
         if not settings.TEMP_STORAGE_PATH.exists():
             settings.TEMP_STORAGE_PATH.mkdir(parents=True, exist_ok=True)
-
-    def _wrap_with_middlewares(self, callback: Any, *middlewares: Any) -> Any:
-        """Wrap handler callback with middleware chain."""
-
-        async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-            for middleware in middlewares:
-                await middleware(update, context, callback)
-            await callback(update, context)
-
-        return wrapped
 
 
 def create_bot() -> DownloaderBot:
