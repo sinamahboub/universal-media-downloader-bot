@@ -9,7 +9,8 @@ import signal
 import sys
 from pathlib import Path
 
-from telegram.ext import ApplicationBuilder, ContextTypes, Update
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes
 
 from core.config import settings
 from core.exceptions import ConfigurationError

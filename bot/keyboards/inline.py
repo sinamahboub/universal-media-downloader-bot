@@ -5,8 +5,7 @@ Provides reusable keyboard layouts for format selection,
 quality selection, cancellation, and main menu navigation.
 """
 
-from telegram import InlineKeyboardMarkup
-from telegram import KeyboardButton
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 from bot.keyboards.layouts import (
     CANCEL_BUTTON,
@@ -31,8 +30,8 @@ def format_keyboard(url: str) -> InlineKeyboardMarkup:
     """
     keyboard = [
         [
-            KeyboardButton(text=DOWNLOAD_AUDIO_BUTTON, callback_data=f"fmt:audio:{url}"),
-            KeyboardButton(text=DOWNLOAD_VIDEO_BUTTON, callback_data=f"fmt:video:{url}"),
+            InlineKeyboardButton(text=DOWNLOAD_AUDIO_BUTTON, callback_data=f"fmt:audio:{url}"),
+            InlineKeyboardButton(text=DOWNLOAD_VIDEO_BUTTON, callback_data=f"fmt:video:{url}"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -51,19 +50,19 @@ def quality_keyboard(format_type: str, url: str) -> InlineKeyboardMarkup:
     """
     if format_type == "audio":
         keyboard = [
-            [KeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{url}")]
+            [InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{url}")]
         ]
     else:
         keyboard = [
             [
-                KeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{url}"),
+                InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{url}"),
             ],
             [
-                KeyboardButton(text=QUALITY_1080P_BUTTON, callback_data=f"qual:1080p:{url}"),
-                KeyboardButton(text=QUALITY_720P_BUTTON, callback_data=f"qual:720p:{url}"),
+                InlineKeyboardButton(text=QUALITY_1080P_BUTTON, callback_data=f"qual:1080p:{url}"),
+                InlineKeyboardButton(text=QUALITY_720P_BUTTON, callback_data=f"qual:720p:{url}"),
             ],
             [
-                KeyboardButton(text=QUALITY_480P_BUTTON, callback_data=f"qual:480p:{url}"),
+                InlineKeyboardButton(text=QUALITY_480P_BUTTON, callback_data=f"qual:480p:{url}"),
             ],
         ]
 
@@ -81,7 +80,7 @@ def cancel_keyboard(job_id: str) -> InlineKeyboardMarkup:
         InlineKeyboardMarkup with cancel button
     """
     keyboard = [
-        [KeyboardButton(text=CANCEL_BUTTON, callback_data=f"cancel:{job_id}")]
+        [InlineKeyboardButton(text=CANCEL_BUTTON, callback_data=f"cancel:{job_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -94,6 +93,6 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardMarkup with main options
     """
     keyboard = [
-        [KeyboardButton(text="📥 Send URL", callback_data="menu:send_url")],
+        [InlineKeyboardButton(text="📥 Send URL", callback_data="menu:send_url")],
     ]
     return InlineKeyboardMarkup(keyboard)

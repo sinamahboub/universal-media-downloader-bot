@@ -52,7 +52,7 @@ def log_download_job_event(
     log_data = {
         "event_type": "download_job",
         "job_id": job_id,
-        "event": event,
+        "event_name": event,
         "user_id": user_id,
         "url": url,
         "platform": platform,
