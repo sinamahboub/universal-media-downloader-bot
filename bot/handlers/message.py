@@ -105,11 +105,19 @@ class MessageHandler:
             )
             return
 
+        # Store URL in context for later retrieval
+        # Use a short-lived in-memory store (in production, use Redis/database)
+        if not hasattr(context, 'bot_data'):
+            context.bot_data = {}
+        
+        job_id = f"{user_id}_{hash(parsed.normalized_url)}"
+        context.bot_data[job_id] = parsed.normalized_url
+
         await update.message.reply_text(
             f"✅ Platform detected: {parsed.platform.value}\n"
             f"📝 Title: {parsed.original_url}\n\n"
             "Choose format:",
-            reply_markup=format_keyboard(parsed.normalized_url),
+            reply_markup=format_keyboard(job_id),
         )
 
         logger.info(

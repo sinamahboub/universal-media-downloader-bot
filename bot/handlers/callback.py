@@ -74,7 +74,13 @@ class CallbackQueryHandler:
         query = update.callback_query
         await query.answer()
 
-        _, format_type, url = query.data.split(":", 2)
+        _, format_type, job_id = query.data.split(":", 2)
+        
+        # Retrieve URL from context
+        url = context.bot_data.get(job_id) if hasattr(context, 'bot_data') else None
+        if not url:
+            await query.edit_message_text("❌ Session expired. Please send the URL again.")
+            return
 
         if format_type == "audio":
             await query.edit_message_text(
@@ -83,7 +89,7 @@ class CallbackQueryHandler:
         else:
             await query.edit_message_text(
                 "🎬 Video selected!\nChoose quality:",
-                reply_markup=quality_keyboard(format_type, url),
+                reply_markup=quality_keyboard(format_type, job_id),
             )
 
         logger.info("format_selected", user_id=query.from_user.id, format=format_type)
@@ -101,7 +107,13 @@ class CallbackQueryHandler:
         query = update.callback_query
         await query.answer()
 
-        _, quality, url = query.data.split(":", 2)
+        _, quality, job_id = query.data.split(":", 2)
+        
+        # Retrieve URL from context
+        url = context.bot_data.get(job_id) if hasattr(context, 'bot_data') else None
+        if not url:
+            await query.edit_message_text("❌ Session expired. Please send the URL again.")
+            return
 
         await query.edit_message_text(
             f"⬇️ Downloading {quality.upper()} video...\nPlease wait."

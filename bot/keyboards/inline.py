@@ -18,51 +18,51 @@ from bot.keyboards.layouts import (
 )
 
 
-def format_keyboard(url: str) -> InlineKeyboardMarkup:
+def format_keyboard(job_id: str) -> InlineKeyboardMarkup:
     """
     Build format selection keyboard.
 
     Args:
-        url: URL to download (passed as callback data)
+        job_id: Job identifier (URL stored in job context)
 
     Returns:
         InlineKeyboardMarkup with audio/video options
     """
     keyboard = [
         [
-            InlineKeyboardButton(text=DOWNLOAD_AUDIO_BUTTON, callback_data=f"fmt:audio:{url}"),
-            InlineKeyboardButton(text=DOWNLOAD_VIDEO_BUTTON, callback_data=f"fmt:video:{url}"),
+            InlineKeyboardButton(text=DOWNLOAD_AUDIO_BUTTON, callback_data=f"fmt:audio:{job_id}"),
+            InlineKeyboardButton(text=DOWNLOAD_VIDEO_BUTTON, callback_data=f"fmt:video:{job_id}"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
-def quality_keyboard(format_type: str, url: str) -> InlineKeyboardMarkup:
+def quality_keyboard(format_type: str, job_id: str) -> InlineKeyboardMarkup:
     """
     Build quality selection keyboard.
 
     Args:
         format_type: "audio" or "video"
-        url: URL to download
+        job_id: Job identifier
 
     Returns:
         InlineKeyboardMarkup with quality options
     """
     if format_type == "audio":
         keyboard = [
-            [InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{url}")]
+            [InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{job_id}")]
         ]
     else:
         keyboard = [
             [
-                InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{url}"),
+                InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{job_id}"),
             ],
             [
-                InlineKeyboardButton(text=QUALITY_1080P_BUTTON, callback_data=f"qual:1080p:{url}"),
-                InlineKeyboardButton(text=QUALITY_720P_BUTTON, callback_data=f"qual:720p:{url}"),
+                InlineKeyboardButton(text=QUALITY_1080P_BUTTON, callback_data=f"qual:1080p:{job_id}"),
+                InlineKeyboardButton(text=QUALITY_720P_BUTTON, callback_data=f"qual:720p:{job_id}"),
             ],
             [
-                InlineKeyboardButton(text=QUALITY_480P_BUTTON, callback_data=f"qual:480p:{url}"),
+                InlineKeyboardButton(text=QUALITY_480P_BUTTON, callback_data=f"qual:480p:{job_id}"),
             ],
         ]
 
