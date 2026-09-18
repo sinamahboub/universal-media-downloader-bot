@@ -33,6 +33,76 @@ class CallbackQueryHandler:
     def __init__(self, media_service: MediaDownloadService | None = None) -> None:
         self._media_service = media_service or MediaDownloadService()
 
+    async def _start_download(
+        self,
+        query: Any,
+        context: ContextTypes.DEFAULT_TYPE,
+        url: str,
+        user_id: int,
+        format_type: str,
+        quality: str,
+    ) -> None:
+        """
+        Start download and send file to user.
+
+        Args:
+            query: Callback query
+            context: Handler context
+            url: Media URL
+            user_id: Telegram user ID
+            format_type: "audio" or "video"
+            quality: Quality preset
+        """
+        try:
+            # Request download
+            job = await self._media_service.request_download(
+                user_id=user_id,
+                url=url,
+                format_type=format_type,
+                quality=quality,
+            )
+            
+            await query.edit_message_text(
+                f"⏳ Downloading...\nJob ID: {job.job_id[:8]}..."
+            )
+            
+            # Process download
+            file_path, mime_type = await self._media_service.process_download(job)
+            
+            # Send file to user
+            if format_type == "audio":
+                await context.bot.send_audio(
+                    chat_id=query.message.chat_id,
+                    audio=open(file_path, 'rb'),
+                    caption=f"✅ Downloaded: {file_path.name}",
+                )
+            else:
+                await context.bot.send_video(
+                    chat_id=query.message.chat_id,
+                    video=open(file_path, 'rb'),
+                    caption=f"✅ Downloaded: {file_path.name}",
+                )
+            
+            await query.edit_message_text("✅ Download complete!")
+            
+            logger.info(
+                "download_sent_to_user",
+                user_id=user_id,
+                job_id=job.job_id,
+                file_path=str(file_path),
+            )
+            
+        except Exception as exc:
+            logger.error(
+                "download_failed",
+                user_id=user_id,
+                url=url,
+                error=str(exc),
+            )
+            await query.edit_message_text(
+                f"❌ Download failed: {str(exc)}\nPlease try again later."
+            )
+
     def register(self, application: Any) -> None:
         """
         Register handlers with telegram application.
@@ -86,6 +156,15 @@ class CallbackQueryHandler:
             await query.edit_message_text(
                 "🎵 Audio selected!\nStarting download...",
             )
+            # Start download immediately for audio
+            await self._start_download(
+                query=query,
+                context=context,
+                url=url,
+                user_id=query.from_user.id,
+                format_type="audio",
+                quality="best"
+            )
         else:
             await query.edit_message_text(
                 "🎬 Video selected!\nChoose quality:",
@@ -117,6 +196,16 @@ class CallbackQueryHandler:
 
         await query.edit_message_text(
             f"⬇️ Downloading {quality.upper()} video...\nPlease wait."
+        )
+        
+        # Start download for video
+        await self._start_download(
+            query=query,
+            context=context,
+            url=url,
+            user_id=query.from_user.id,
+            format_type="video",
+            quality=quality
         )
 
         logger.info("quality_selected", user_id=query.from_user.id, quality=quality)
