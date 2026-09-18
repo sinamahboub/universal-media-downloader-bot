@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "downloader-bot"
+version = "1.0.0"
+description = "Enterprise-grade Telegram bot for media downloads"
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Engineering Team", email = "engineering@example.com"}
+]
+keywords = ["telegram", "bot", "downloader", "youtube", "soundcloud", "instagram"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: AsyncIO",
+]
+
+dependencies = [
+    "python-telegram-bot==20.7",
+    "yt-dlp==2024.3.10",
+    "pydantic==2.5.3",
+    "pydantic-settings==2.1.0",
+    "structlog==24.1.0",
+    "sentry-sdk==1.40.0",
+    "aiofiles==23.3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.0.0",
+    "pytest-asyncio==0.23.3",
+    "pytest-cov==4.1.0",
+    "pytest-mock==3.12.0",
+    "ruff==0.3.0",
+    "mypy==1.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/downloader-bot"
+Documentation = "https://github.com/your-org/downloader-bot#readme"
+Repository = "https://github.com/your-org/downloader-bot.git"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bot*", "core*", "infrastructure*"]
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --cov=bot --cov=core --cov=infrastructure"

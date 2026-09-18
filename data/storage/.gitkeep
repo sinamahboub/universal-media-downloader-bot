@@ -1,0 +1,3 @@
+# Temporary file storage directory
+# This directory is used for storing downloaded files before delivery
+# Files are automatically cleaned up after delivery or after 24 hours
