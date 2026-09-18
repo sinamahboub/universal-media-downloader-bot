@@ -27,7 +27,7 @@ Enterprise-grade Telegram bot for downloading media from YouTube, SoundCloud, an
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/downloader-bot.git
+git clone https://github.com/sinamahboub/universal-media-downloader-bot.git
 cd downloader-bot
 
 # Create virtual environment
@@ -109,55 +109,55 @@ python -m bot.main
 ```
 downloader-bot/
 +-- bot/
-¦   +-- __init__.py
-¦   +-- main.py                 # Application entry point
-¦   +-- downloader/             # Platform-specific download implementations
-¦   ¦   +-- __init__.py
-¦   ¦   +-- base.py
-¦   ¦   +-- factory.py
-¦   ¦   +-- youtube.py
-¦   ¦   +-- soundcloud.py
-¦   ¦   +-- instagram.py
-¦   +-- handlers/               # Telegram update handlers
-¦   ¦   +-- __init__.py
-¦   ¦   +-- callback.py
-¦   ¦   +-- message.py
-¦   +-- keyboards/              # Inline keyboard builders
-¦   ¦   +-- __init__.py
-¦   ¦   +-- inline.py
-¦   ¦   +-- layouts.py
-¦   +-- middlewares/             # Telegram middlewares
-¦   ¦   +-- __init__.py
-¦   ¦   +-- auth.py
-¦   ¦   +-- rate_limit.py
-¦   +-- services/               # Business logic services
-¦       +-- __init__.py
-¦       +-- media_service.py
-¦       +-- url_parser.py
+Â¦   +-- __init__.py
+Â¦   +-- main.py                 # Application entry point
+Â¦   +-- downloader/             # Platform-specific download implementations
+Â¦   Â¦   +-- __init__.py
+Â¦   Â¦   +-- base.py
+Â¦   Â¦   +-- factory.py
+Â¦   Â¦   +-- youtube.py
+Â¦   Â¦   +-- soundcloud.py
+Â¦   Â¦   +-- instagram.py
+Â¦   +-- handlers/               # Telegram update handlers
+Â¦   Â¦   +-- __init__.py
+Â¦   Â¦   +-- callback.py
+Â¦   Â¦   +-- message.py
+Â¦   +-- keyboards/              # Inline keyboard builders
+Â¦   Â¦   +-- __init__.py
+Â¦   Â¦   +-- inline.py
+Â¦   Â¦   +-- layouts.py
+Â¦   +-- middlewares/             # Telegram middlewares
+Â¦   Â¦   +-- __init__.py
+Â¦   Â¦   +-- auth.py
+Â¦   Â¦   +-- rate_limit.py
+Â¦   +-- services/               # Business logic services
+Â¦       +-- __init__.py
+Â¦       +-- media_service.py
+Â¦       +-- url_parser.py
 +-- core/
-¦   +-- __init__.py
-¦   +-- config.py               # Pydantic configuration management
-¦   +-- exceptions.py           # Centralized exception hierarchy
-¦   +-- logger.py               # Structured JSON logging
+Â¦   +-- __init__.py
+Â¦   +-- config.py               # Pydantic configuration management
+Â¦   +-- exceptions.py           # Centralized exception hierarchy
+Â¦   +-- logger.py               # Structured JSON logging
 +-- data/
-¦   +-- storage/
-¦       +-- temp/               # Temporary download storage
+Â¦   +-- storage/
+Â¦       +-- temp/               # Temporary download storage
 +-- deploy/
-¦   +-- downloader-bot.service  # Systemd service file
+Â¦   +-- downloader-bot.service  # Systemd service file
 +-- infrastructure/
-¦   +-- __init__.py
-¦   +-- cache.py                # In-memory caching
-¦   +-- lock.py                 # Single-instance file lock
-¦   +-- queue.py                # Async job queue system
-¦   +-- storage.py              # File lifecycle management
+Â¦   +-- __init__.py
+Â¦   +-- cache.py                # In-memory caching
+Â¦   +-- lock.py                 # Single-instance file lock
+Â¦   +-- queue.py                # Async job queue system
+Â¦   +-- storage.py              # File lifecycle management
 +-- tests/
-¦   +-- __init__.py
-¦   +-- integration/
-¦   ¦   +-- __init__.py
-¦   +-- unit/
-¦       +-- __init__.py
-¦       +-- test_exceptions.py
-¦       +-- test_url_parser.py
+Â¦   +-- __init__.py
+Â¦   +-- integration/
+Â¦   Â¦   +-- __init__.py
+Â¦   +-- unit/
+Â¦       +-- __init__.py
+Â¦       +-- test_exceptions.py
+Â¦       +-- test_url_parser.py
 +-- .env.example                # Environment template
 +-- .gitignore                  # Git ignore rules
 +-- LICENSE                     # Proprietary license
