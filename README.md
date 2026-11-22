@@ -28,7 +28,7 @@ Enterprise-grade Telegram bot for downloading media from YouTube, SoundCloud, an
 ```bash
 # Clone the repository
 git clone https://github.com/sinamahboub/universal-media-downloader-bot.git
-cd downloader-bot
+cd universal-media-downloader-bot
 
 # Create virtual environment
 python -m venv venv
