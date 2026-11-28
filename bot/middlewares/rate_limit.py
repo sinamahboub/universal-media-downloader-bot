@@ -2,6 +2,12 @@
 Rate limiting middleware for Telegram bot.
 
 Implements per-user rate limiting using sliding window algorithm.
+
+python-telegram-bot has no aiogram-style middleware chain, so this is
+not registered with ``add_handler``: handlers call
+:meth:`RateLimitMiddleware.check` explicitly at the top of every
+download entry point. ``__call__`` is kept as a plain wrapper for
+the same check.
 """
 
 import asyncio
@@ -10,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from core.config import settings
+from core.config import get_settings
 from core.exceptions import RateLimitExceededError
 from core.logger import StructuredLogger, log_rate_limit
 from telegram import Update
@@ -39,10 +45,57 @@ class RateLimitMiddleware:
         max_requests: int | None = None,
         window_seconds: int | None = None,
     ) -> None:
-        self._max_requests = max_requests or settings.RATE_LIMIT_REQUESTS
-        self._window_seconds = window_seconds or settings.RATE_LIMIT_WINDOW_SECONDS
+        settings = get_settings()
+        self._max_requests = max_requests if max_requests is not None else settings.RATE_LIMIT_REQUESTS
+        self._window_seconds = (
+            window_seconds if window_seconds is not None else settings.RATE_LIMIT_WINDOW_SECONDS
+        )
         self._user_limits: dict[int, UserRateLimit] = defaultdict(UserRateLimit)
         self._lock = asyncio.Lock()
+
+    async def allow_user(self, user_id: int) -> tuple[bool, int | None]:
+        """Check the rate limit for a bare user id.
+
+        Returns ``(True, None)`` when the user may proceed, or
+        ``(False, retry_after_seconds)`` when limited. Used by
+        callback handlers, which only have a CallbackQuery, not a
+        full Update, at download time.
+        """
+        async with self._lock:
+            user_limit = self._user_limits[user_id]
+
+            if self._is_rate_limited(user_limit):
+                retry_after = self._calculate_retry_after(user_limit)
+                log_rate_limit(
+                    user_id,
+                    "download_request",
+                    self._max_requests,
+                    self._get_remaining(user_limit),
+                )
+                return False, retry_after
+
+            self._record_request(user_limit)
+
+        return True, None
+
+    async def check(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, int | None]:
+        """Enforce the rate limit for one update.
+
+        Returns ``(True, None)`` when the update may proceed, or
+        ``(False, retry_after_seconds)`` when the user is limited
+        (after telling the user).
+        """
+        user = update.effective_user
+        if not user:
+            return False, None
+
+        allowed, retry_after = await self.allow_user(user.id)
+        if not allowed:
+            if update.effective_message is not None:
+                await update.effective_message.reply_text(
+                    f"⚠️ Rate limit exceeded. Try again in {retry_after} seconds."
+                )
+        return allowed, retry_after
 
     async def __call__(
         self,
@@ -50,41 +103,19 @@ class RateLimitMiddleware:
         context: ContextTypes.DEFAULT_TYPE,
         handler: Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]],
     ) -> None:
-        """
-        Process update through rate limit check.
-
-        Args:
-            update: Telegram update
-            context: Handler context
-            handler: Next handler in chain
+        """Wrap a handler with the rate limit check.
 
         Raises:
             RateLimitExceededError: If user exceeds rate limit
         """
-        user = update.effective_user
-        if not user:
-            await handler(update, context)
-            return
-
-        async with self._lock:
-            user_limit = self._user_limits[user.id]
-
-            if self._is_rate_limited(user_limit):
-                retry_after = self._calculate_retry_after(user_limit)
-                log_rate_limit(
-                    user.id,
-                    "download_request",
-                    self._max_requests,
-                    self._get_remaining(user_limit),
-                )
-                raise RateLimitExceededError(
-                    f"Rate limit exceeded. Try again in {retry_after} seconds.",
-                    user_id=user.id,
-                    retry_after=retry_after,
-                )
-
-            self._record_request(user_limit)
-
+        allowed, retry_after = await self.check(update, context)
+        if not allowed:
+            user = update.effective_user
+            raise RateLimitExceededError(
+                "Rate limit exceeded.",
+                user_id=user.id if user else 0,
+                retry_after=retry_after,
+            )
         await handler(update, context)
 
     def _is_rate_limited(self, user_limit: UserRateLimit) -> bool:

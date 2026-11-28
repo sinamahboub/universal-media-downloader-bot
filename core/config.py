@@ -3,9 +3,16 @@ Environment configuration management.
 
 Uses Pydantic Settings for validation, type safety, and .env support.
 All environment variables are centralized here for maintainability.
+
+Settings are lazy: importing this module never touches the environment
+and never raises. Call :func:`get_settings` to build (and cache) the
+settings object; the bot token itself is validated in ``bot.main`` so
+that a missing or malformed token fails with a clear message at
+startup instead of an import-time traceback.
 """
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -29,11 +36,18 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
 
-    # Telegram Bot Configuration
-    TELEGRAM_BOT_TOKEN: str = Field(..., description="Bot token from @BotFather")
+    # Telegram Bot Configuration. Empty by default on purpose: the
+    # token is validated explicitly in bot.main so importing this
+    # module (or running the test suite) never crashes for a missing
+    # token.
+    TELEGRAM_BOT_TOKEN: str = Field(
+        default="",
+        description="Bot token from @BotFather",
+    )
 
-    # Optional user whitelist (comma-separated Telegram user IDs)
-    ALLOWED_USERS: str | None = Field(
+    # Optional user whitelist (comma-separated Telegram user IDs).
+    # None means every user is allowed.
+    ALLOWED_USERS: list[int] | None = Field(
         default=None,
         description="Comma-separated list of allowed Telegram user IDs. If None, all users allowed.",
     )
@@ -74,29 +88,35 @@ class Settings(BaseSettings):
     RETRY_BASE_DELAY: float = Field(default=1.0, description="Base delay in seconds for exponential backoff")
     RETRY_MAX_DELAY: float = Field(default=60.0, description="Max delay in seconds for backoff")
 
-    # Observability configuration
-    SENTRY_DSN: str | None = Field(default=None, description="Sentry DSN for error tracking")
-    ENABLE_SENTRY: bool = Field(default=False, description="Enable Sentry error tracking")
-
     # Deployment configuration
     WORKER_CONCURRENCY: int = Field(default=1, description="Number of concurrent bot workers")
 
     @field_validator("ALLOWED_USERS", mode="before")
     @classmethod
-    def parse_allowed_users(cls, value: str | None) -> list[int] | None:
-        if value is None or value.strip() == "":
+    def parse_allowed_users(cls, value: str | list[int] | None) -> list[int] | None:
+        if value is None:
             return None
-        try:
-            return [int(uid.strip()) for uid in value.split(",") if uid.strip()]
-        except ValueError as exc:
-            raise ValueError("ALLOWED_USERS must be comma-separated integers") from exc
+        if isinstance(value, list):
+            return [int(uid) for uid in value]
+        if isinstance(value, str):
+            if value.strip() == "":
+                return None
+            try:
+                return [int(uid.strip()) for uid in value.split(",") if uid.strip()]
+            except ValueError as exc:
+                raise ValueError("ALLOWED_USERS must be comma-separated integers") from exc
+        raise ValueError("ALLOWED_USERS must be comma-separated integers")
 
     @field_validator("TEMP_STORAGE_PATH", mode="before")
     @classmethod
     def ensure_absolute_path(cls, value: Path | str) -> Path:
         path = Path(value)
         if not path.is_absolute():
-            base = Path(__file__).resolve().parent.parent.parent
+            # config.py lives in <repo>/core, so the repo root is its
+            # parent directory (parent.parent). A previous version used
+            # parent.parent.parent and resolved temp storage one level
+            # above the repository.
+            base = Path(__file__).resolve().parent.parent
             path = base / path
         return path.resolve()
 
@@ -118,8 +138,27 @@ class Settings(BaseSettings):
         self.TEMP_STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 
 
-# Global settings instance
-settings = Settings()
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Build (once) and return the application settings.
 
-# Ensure temp storage is ready
-settings.ensure_temp_storage()
+    Lazy on purpose: importing ``core.config`` must never fail, even
+    with no ``.env`` file and no token. The token is validated later,
+    in ``bot.main``.
+    """
+    settings = Settings()
+    settings.ensure_temp_storage()
+    return settings
+
+
+def reset_settings_cache() -> None:
+    """Drop the cached settings (used by the test suite)."""
+    get_settings.cache_clear()
+
+
+def __getattr__(name: str):
+    # Backwards compatibility: ``from core.config import settings``
+    # keeps working, but resolves lazily through get_settings().
+    if name == "settings":
+        return get_settings()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -11,7 +11,6 @@ from typing import Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.config import settings
 from core.exceptions import (
     AuthenticationError,
     DownloadFailedError,
@@ -22,6 +21,8 @@ from core.exceptions import (
 )
 from core.logger import StructuredLogger
 from bot.keyboards.inline import format_keyboard
+from bot.middlewares.auth import AuthMiddleware
+from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services.media_service import MediaDownloadService
 
 logger = StructuredLogger(component="handlers.message")
@@ -34,14 +35,25 @@ class MessageHandler:
     Processes media URLs and initiates download workflow.
     """
 
-    def __init__(self, media_service: MediaDownloadService) -> None:
+    def __init__(
+        self,
+        media_service: MediaDownloadService,
+        auth: AuthMiddleware | None = None,
+        rate_limit: RateLimitMiddleware | None = None,
+    ) -> None:
         """
         Initialize message handler.
 
         Args:
             media_service: Media download service instance
+            auth: Auth middleware (explicit PTB-native check; PTB has
+                no middleware chain, so it is called at the top of
+                every handler)
+            rate_limit: Rate limit middleware, called the same way
         """
         self._media_service = media_service
+        self._auth = auth or AuthMiddleware()
+        self._rate_limit = rate_limit or RateLimitMiddleware()
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -52,6 +64,17 @@ class MessageHandler:
             context: Handler context
         """
         user = update.effective_user
+        if user is None or update.message is None or update.message.text is None:
+            return
+
+        # Explicit guards: auth first, then rate limit. Both reply to
+        # the user themselves when the update is rejected.
+        if not await self._auth.check(update, context):
+            return
+        allowed, _retry_after = await self._rate_limit.check(update, context)
+        if not allowed:
+            return
+
         text = update.message.text.strip()
 
         logger.info("message_received", user_id=user.id, text_length=len(text))

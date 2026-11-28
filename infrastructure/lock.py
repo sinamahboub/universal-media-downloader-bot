@@ -4,7 +4,6 @@ import signal
 from pathlib import Path
 from typing import Optional
 
-from core.config import settings
 from core.logger import StructuredLogger
 
 logger = StructuredLogger(component="lock")

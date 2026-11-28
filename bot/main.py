@@ -6,6 +6,7 @@ graceful shutdown, and comprehensive error handling.
 """
 
 import logging
+import re
 import sys
 import asyncio
 from pathlib import Path
@@ -21,7 +22,8 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from core.config import settings
+from core.config import get_settings
+from core.exceptions import ConfigurationError
 from core.logger import StructuredLogger
 from infrastructure.queue import AsyncDownloadQueue
 from infrastructure.storage import StorageManager
@@ -29,15 +31,37 @@ from infrastructure.lock import ensure_single_instance
 
 from bot.handlers.callback import CallbackQueryHandler as BotCallbackQueryHandler
 from bot.handlers.message import MessageHandler as BotMessageHandler
+from bot.middlewares.auth import AuthMiddleware
+from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services.media_service import MediaDownloadService
 
 struct_logger = StructuredLogger(component="main")
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=getattr(logging, settings.LOG_LEVEL.upper()),
+    level=getattr(logging, get_settings().LOG_LEVEL.upper()),
 )
 logger = logging.getLogger(__name__)
+
+# Telegram bot tokens look like "<bot-id>:<secret>", e.g.
+# "123456789:AAE..." with a 35-character secret. This only checks the
+# shape, never the network: a malformed token fails fast with a clear
+# message instead of a confusing API error at polling time.
+_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
+
+
+def validate_token(token: str) -> None:
+    """Validate the bot token shape, raising ConfigurationError."""
+    if not token:
+        raise ConfigurationError(
+            "TELEGRAM_BOT_TOKEN is not set. Copy .env.example to .env "
+            "and set TELEGRAM_BOT_TOKEN to the token from @BotFather."
+        )
+    if not _TOKEN_RE.match(token):
+        raise ConfigurationError(
+            "TELEGRAM_BOT_TOKEN does not look like a Telegram bot token "
+            "(expected '<bot-id>:<secret>'). Check the value in .env."
+        )
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -74,6 +98,33 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             pass
 
 
+def _guarded(handler, auth: AuthMiddleware):
+    """Wrap a command handler with the auth check.
+
+    python-telegram-bot has no middleware chain, so guards are applied
+    explicitly. Rate limiting is applied only to the download entry
+    points (messages and callbacks), not to /start and /help.
+    """
+
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await auth.check(update, context):
+            return
+        await handler(update, context)
+
+    return wrapper
+
+
+async def _post_init(app: Application) -> None:
+    """Run once after the application is built, before polling.
+
+    Deletes any stale webhook (the bot polls) and validates the token
+    against Telegram with getMe, so a bad token fails here with a
+    clear message instead of dying mid-polling.
+    """
+    await _safe_delete_webhook(app)
+    await _validate_token(app)
+
+
 async def _safe_delete_webhook(app: Application) -> None:
     """Delete webhook without raising on network errors."""
     try:
@@ -85,14 +136,20 @@ async def _safe_delete_webhook(app: Application) -> None:
         logger.warning("delete_webhook_unexpected_error: %s", exc)
 
 
-async def _safe_get_me(app: Application) -> None:
-    """Validate bot token by calling getMe."""
+async def _validate_token(app: Application) -> None:
+    """Validate bot token by calling getMe.
+
+    Raises:
+        ConfigurationError: If the token is rejected by Telegram.
+    """
     try:
         me = await app.bot.get_me()
         logger.info("bot_authenticated: id=%s username=%s", me.id, me.username)
     except TelegramError as exc:
-        logger.error("get_me_failed: %s", exc, exc_info=True)
-        raise SystemExit(f"Invalid bot token or network issue: {exc}")
+        raise ConfigurationError(
+            f"Telegram rejected the bot token (getMe failed: {exc}). "
+            "Check TELEGRAM_BOT_TOKEN in .env."
+        ) from exc
 
 
 def check_ffmpeg() -> bool:
@@ -102,10 +159,13 @@ def check_ffmpeg() -> bool:
 
 
 def create_bot_application() -> Application:
-    """Create and configure the Telegram bot application."""
-    if not settings.TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN not configured")
-        sys.exit(1)
+    """Create and configure the Telegram bot application.
+
+    Raises:
+        ConfigurationError: If the bot token is missing or malformed.
+    """
+    settings = get_settings()
+    validate_token(settings.TELEGRAM_BOT_TOKEN)
 
     ffmpeg_available = check_ffmpeg()
     if not ffmpeg_available:
@@ -120,14 +180,30 @@ def create_bot_application() -> Application:
         ffmpeg_available=ffmpeg_available,
     )
 
-    message_handler = BotMessageHandler(media_service=media_service)
-    callback_handler = BotCallbackQueryHandler(media_service=media_service)
+    # Auth and rate limiting are wired here explicitly: PTB has no
+    # middleware chain, so the handler classes run these checks at the
+    # top of every update (previously the middleware classes existed
+    # but were never instantiated, so ALLOWED_USERS had no effect).
+    auth = AuthMiddleware()
+    rate_limit = RateLimitMiddleware()
 
-    application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+    message_handler = BotMessageHandler(
+        media_service=media_service, auth=auth, rate_limit=rate_limit
+    )
+    callback_handler = BotCallbackQueryHandler(
+        media_service=media_service, auth=auth, rate_limit=rate_limit
+    )
 
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("cancel", cancel_command))
+    application = (
+        Application.builder()
+        .token(settings.TELEGRAM_BOT_TOKEN)
+        .post_init(_post_init)
+        .build()
+    )
+
+    application.add_handler(CommandHandler("start", _guarded(start_command, auth)))
+    application.add_handler(CommandHandler("help", _guarded(help_command, auth)))
+    application.add_handler(CommandHandler("cancel", _guarded(cancel_command, auth)))
 
     application.add_handler(
         MessageHandler(
@@ -180,6 +256,9 @@ def main() -> None:
 
     except KeyboardInterrupt:
         print("\nShutting down...")
+    except ConfigurationError as exc:
+        print(f"Bot failed to start: {exc}")
+        sys.exit(1)
     except Exception as exc:
         logger.error("bot_startup_failed: %s", exc, exc_info=True)
         print(f"Bot failed to start: {exc}")
@@ -192,4 +271,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

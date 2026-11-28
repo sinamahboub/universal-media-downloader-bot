@@ -6,21 +6,34 @@ Callback query handlers for Telegram bot.
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.config import settings
 from core.exceptions import DownloadFailedError, FileSizeLimitExceededError, MediaExtractionError
 from core.logger import StructuredLogger
 from bot.keyboards.inline import quality_keyboard
+from bot.middlewares.auth import AuthMiddleware
+from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services.media_service import MediaDownloadService
 
 logger = StructuredLogger(component="handlers.callback")
 
 
 class CallbackQueryHandler:
-    def __init__(self, media_service: MediaDownloadService) -> None:
+    def __init__(
+        self,
+        media_service: MediaDownloadService,
+        auth: AuthMiddleware | None = None,
+        rate_limit: RateLimitMiddleware | None = None,
+    ) -> None:
         self._media_service = media_service
+        self._auth = auth or AuthMiddleware()
+        self._rate_limit = rate_limit or RateLimitMiddleware()
 
     async def handle_format_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
+        if query is None:
+            return
+        if not await self._auth.check(update, context):
+            await query.answer()
+            return
         await query.answer()
         parts = query.data.split(":")
         if len(parts) != 3 or parts[0] != "fmt":
@@ -41,6 +54,11 @@ class CallbackQueryHandler:
 
     async def handle_quality_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
+        if query is None:
+            return
+        if not await self._auth.check(update, context):
+            await query.answer()
+            return
         await query.answer()
         parts = query.data.split(":")
         if len(parts) != 3 or parts[0] != "qual":
@@ -53,10 +71,23 @@ class CallbackQueryHandler:
 
     async def handle_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
+        if query is None:
+            return
+        if not await self._auth.check(update, context):
+            await query.answer()
+            return
         await query.answer()
         await query.edit_message_text("Download cancelled.")
 
     async def _start_download(self, query, context: ContextTypes.DEFAULT_TYPE, format_type: str, quality: str) -> None:
+        # Rate limit the download itself (the format/quality taps are
+        # navigation; the download is the expensive operation).
+        allowed, retry_after = await self._rate_limit.allow_user(query.from_user.id)
+        if not allowed:
+            await query.edit_message_text(
+                f"Rate limit exceeded. Try again in {retry_after} seconds."
+            )
+            return
         url = context.user_data.get("pending_url")
         user_id = context.user_data.get("user_id")
         if not url:
