@@ -5,7 +5,7 @@ Exposes core infrastructure components for dependency injection.
 """
 
 from .cache import AsyncCache
-from .lock import SingleInstanceLock, LockManager, ensure_single_instance
+from .lock import LockManager, SingleInstanceLock, ensure_single_instance
 from .queue import AsyncDownloadQueue, DownloadJob, JobStatus, QueueStats
 from .storage import FileInfo, StorageManager
 

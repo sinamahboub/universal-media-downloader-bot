@@ -2,7 +2,7 @@
 python-telegram-bot==22.8
 
 # Media Downloading
-yt-dlp==2024.3.10
+yt-dlp==2026.11.23
 
 # Configuration & Validation
 pydantic==2.5.3
@@ -11,15 +11,9 @@ pydantic-settings==2.1.0
 # Structured Logging
 structlog==24.1.0
 
-# Observability
-sentry-sdk==1.40.0
-
-# Async Support
-aiofiles==23.3.1
-
 # Testing
-pytest==8.0.0
-pytest-asyncio==0.23.3
+pytest==8.3.5
+pytest-asyncio==0.26.0
 pytest-cov==4.1.0
 pytest-mock==3.12.0
 

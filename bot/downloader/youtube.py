@@ -2,10 +2,11 @@
 
 from pathlib import Path
 
-from .base import BaseDownloader, MediaInfo, YtDlpRunner, is_auth_error
 from core.config import get_settings
-from core.exceptions import MediaExtractionError, DownloadFailedError
+from core.exceptions import DownloadFailedError, MediaExtractionError
 from core.logger import StructuredLogger
+
+from .base import BaseDownloader, MediaInfo, YtDlpRunner, is_auth_error
 
 logger = StructuredLogger(component="downloader.youtube")
 

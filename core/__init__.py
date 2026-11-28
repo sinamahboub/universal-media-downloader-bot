@@ -8,8 +8,8 @@ from .config import get_settings, reset_settings_cache
 from .exceptions import (
     AuthenticationError,
     ConfigurationError,
-    DownloadFailedError,
     DownloaderError,
+    DownloadFailedError,
     FileSizeLimitExceededError,
     MediaExtractionError,
     PlatformNotSupportedError,

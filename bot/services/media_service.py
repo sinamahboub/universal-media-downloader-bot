@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from bot.downloader.factory import DownloaderFactory
+from bot.services.url_parser import ParsedURL, URLParserService
 from core.config import get_settings
 from core.exceptions import (
     DownloadFailedError,
@@ -24,9 +26,6 @@ from core.exceptions import (
 from core.logger import StructuredLogger, log_download_job_event
 from infrastructure.queue import AsyncDownloadQueue, DownloadJob
 from infrastructure.storage import StorageManager
-
-from bot.downloader.factory import DownloaderFactory
-from bot.services.url_parser import URLParserService, ParsedURL
 
 logger = StructuredLogger(component="media_service")
 

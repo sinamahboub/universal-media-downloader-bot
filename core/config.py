@@ -11,7 +11,6 @@ that a missing or malformed token fails with a clear message at
 startup instead of an import-time traceback.
 """
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal

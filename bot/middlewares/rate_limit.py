@@ -16,11 +16,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
+from telegram import Update
+from telegram.ext import ContextTypes
+
 from core.config import get_settings
 from core.exceptions import RateLimitExceededError
 from core.logger import StructuredLogger, log_rate_limit
-from telegram import Update
-from telegram.ext import ContextTypes
 
 logger = StructuredLogger(component="rate_limit_middleware")
 

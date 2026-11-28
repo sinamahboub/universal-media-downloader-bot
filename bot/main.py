@@ -8,32 +8,29 @@ graceful shutdown, and comprehensive error handling.
 import logging
 import re
 import sys
-import asyncio
-from pathlib import Path
 
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import (
     Application,
-    CommandHandler,
     CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
     MessageHandler,
     filters,
-    ContextTypes,
 )
-
-from core.config import get_settings
-from core.exceptions import ConfigurationError
-from core.logger import StructuredLogger
-from infrastructure.queue import AsyncDownloadQueue
-from infrastructure.storage import StorageManager
-from infrastructure.lock import ensure_single_instance
 
 from bot.handlers.callback import CallbackQueryHandler as BotCallbackQueryHandler
 from bot.handlers.message import MessageHandler as BotMessageHandler
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services.media_service import MediaDownloadService
+from core.config import get_settings
+from core.exceptions import ConfigurationError
+from core.logger import StructuredLogger
+from infrastructure.lock import ensure_single_instance
+from infrastructure.queue import AsyncDownloadQueue
+from infrastructure.storage import StorageManager
 
 struct_logger = StructuredLogger(component="main")
 
@@ -149,10 +146,14 @@ async def _validate_token(app: Application) -> None:
     try:
         me = await app.bot.get_me()
         logger.info("bot_authenticated: id=%s username=%s", me.id, me.username)
-    except TelegramError as exc:
+    except Exception as exc:
+        # Any getMe failure -- a rejected token (TelegramError) or
+        # no route to Telegram at all -- is a startup failure with
+        # the same clear message. PTB's bootstrap retry loop would
+        # otherwise surface the raw httpx error.
         raise ConfigurationError(
-            f"Telegram rejected the bot token (getMe failed: {exc}). "
-            "Check TELEGRAM_BOT_TOKEN in .env."
+            f"Could not validate the bot token with Telegram (getMe failed: {exc}). "
+            "Check TELEGRAM_BOT_TOKEN in .env and the network connection."
         ) from exc
 
 
@@ -242,6 +243,19 @@ def create_bot_application() -> Application:
     return application
 
 
+def _is_network_error(exc: BaseException) -> bool:
+    """True when an exception is a failure to reach Telegram.
+
+    PTB's own ``bot.initialize()`` calls getMe before our post_init
+    runs, so a bad token or an unreachable Telegram surfaces here
+    as a telegram NetworkError or a raw httpx error, not as our
+    ConfigurationError. Both mean the same thing to the operator.
+    """
+    if isinstance(exc, TelegramError):
+        return True
+    return type(exc).__module__.split(".")[0] == "httpx"
+
+
 def main() -> None:
     """Main entry point for the bot."""
     print("Starting Telegram Media Downloader Bot...")
@@ -266,8 +280,15 @@ def main() -> None:
         print(f"Bot failed to start: {exc}")
         sys.exit(1)
     except Exception as exc:
-        logger.error("bot_startup_failed: %s", exc, exc_info=True)
-        print(f"Bot failed to start: {exc}")
+        if _is_network_error(exc):
+            print(
+                "Bot failed to start: could not reach Telegram to "
+                "validate the bot token. Check TELEGRAM_BOT_TOKEN in "
+                f".env and the network connection. ({exc})"
+            )
+        else:
+            logger.error("bot_startup_failed: %s", exc, exc_info=True)
+            print(f"Bot failed to start: {exc}")
         sys.exit(1)
     finally:
         print("Cleaning up...")

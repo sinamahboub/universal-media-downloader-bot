@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "Proprietary"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Engineering Team", email = "engineering@example.com"}
+    {name = "Sina Mahboub", email = "mr.sinamahboub@gmail.com"}
 ]
 keywords = ["telegram", "bot", "downloader", "youtube", "soundcloud", "instagram"]
 classifiers = [
@@ -25,19 +25,17 @@ classifiers = [
 ]
 
 dependencies = [
-    "python-telegram-bot==20.7",
-    "yt-dlp==2024.3.10",
+    "python-telegram-bot==22.8",
+    "yt-dlp==2026.11.23",
     "pydantic==2.5.3",
     "pydantic-settings==2.1.0",
     "structlog==24.1.0",
-    "sentry-sdk==1.40.0",
-    "aiofiles==23.3.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.0.0",
-    "pytest-asyncio==0.23.3",
+    "pytest==8.3.5",
+    "pytest-asyncio==0.26.0",
     "pytest-cov==4.1.0",
     "pytest-mock==3.12.0",
     "ruff==0.3.0",
@@ -45,9 +43,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/downloader-bot"
-Documentation = "https://github.com/your-org/downloader-bot#readme"
-Repository = "https://github.com/your-org/downloader-bot.git"
+Homepage = "https://github.com/sinamahboub/universal-media-downloader-bot"
+Documentation = "https://github.com/sinamahboub/universal-media-downloader-bot#readme"
+Repository = "https://github.com/sinamahboub/universal-media-downloader-bot.git"
 
 [tool.setuptools.packages.find]
 where = ["."]

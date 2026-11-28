@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
 
-from core.exceptions import PlatformNotSupportedError, URLValidationError
+from core.exceptions import PlatformNotSupportedError
 from core.logger import StructuredLogger
 
 logger = StructuredLogger(component="url_parser")

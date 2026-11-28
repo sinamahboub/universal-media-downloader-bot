@@ -8,14 +8,14 @@ the download workflow.
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.exceptions import (
-    URLValidationError,
-)
-from core.logger import StructuredLogger
 from bot.keyboards.inline import format_keyboard
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services.media_service import MediaDownloadService
+from core.exceptions import (
+    URLValidationError,
+)
+from core.logger import StructuredLogger
 
 logger = StructuredLogger(component="handlers.message")
 

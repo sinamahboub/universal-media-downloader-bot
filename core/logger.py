@@ -5,12 +5,8 @@ Provides JSON-formatted logs with consistent fields for observability
 and integration with Sentry-style error tracking.
 """
 
-import json
 import logging
-import os
-import sys
 import traceback
-from datetime import datetime, timezone
 from typing import Any
 
 import structlog

@@ -3,8 +3,9 @@
 
 from pathlib import Path
 
+from core.exceptions import DownloadFailedError, MediaExtractionError
+
 from .base import BaseDownloader, MediaInfo, YtDlpRunner
-from core.exceptions import MediaExtractionError, DownloadFailedError
 
 _BASIC_OPTS = {"quiet": True, "no_warnings": True, "noplaylist": True}
 

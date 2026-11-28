@@ -6,16 +6,14 @@ Defines the interface contract that all platform-specific downloaders must imple
 
 import asyncio
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any, Callable, Awaitable, TypeVar
-from dataclasses import dataclass
-from datetime import datetime
+from typing import Any, Awaitable, Callable, Dict, Optional, TypeVar
 
 import yt_dlp
 
 from core.config import get_settings
-from core.exceptions import MediaExtractionError, DownloadFailedError
 from core.logger import StructuredLogger
 
 logger = StructuredLogger(component="downloader.base")

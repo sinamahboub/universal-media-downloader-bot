@@ -1,13 +1,11 @@
 
-import pytest
 
 from core.exceptions import (
     DownloaderError,
-    URLValidationError,
-    PlatformNotSupportedError,
     DownloadFailedError,
-    FileSizeLimitExceededError,
+    PlatformNotSupportedError,
     RateLimitExceededError,
+    URLValidationError,
 )
 
 

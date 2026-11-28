@@ -6,9 +6,9 @@ based on the detected platform from a URL.
 """
 
 from bot.downloader.base import BaseDownloader
-from bot.downloader.youtube import YouTubeDownloader
-from bot.downloader.soundcloud import SoundCloudDownloader
 from bot.downloader.instagram import InstagramDownloader
+from bot.downloader.soundcloud import SoundCloudDownloader
+from bot.downloader.youtube import YouTubeDownloader
 from bot.services.url_parser import Platform
 from core.exceptions import PlatformNotSupportedError
 from core.logger import StructuredLogger

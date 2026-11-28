@@ -1,3 +1,6 @@
+# Single-instance lock file
+bot.lock
+
 # Python
 __pycache__/
 *.py[cod]

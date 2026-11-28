@@ -6,7 +6,6 @@ fallback link generation when files exceed Telegram limits.
 """
 
 import time
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path

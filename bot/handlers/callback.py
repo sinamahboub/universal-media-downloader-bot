@@ -6,13 +6,13 @@ Callback query handlers for Telegram bot.
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.exceptions import DownloadFailedError, FileSizeLimitExceededError, MediaExtractionError
-from core.logger import StructuredLogger
 from bot.downloader.base import Quality
 from bot.keyboards.inline import quality_keyboard
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.services.media_service import MediaDownloadService, PendingJob
+from core.exceptions import DownloadFailedError, FileSizeLimitExceededError, MediaExtractionError
+from core.logger import StructuredLogger
 
 logger = StructuredLogger(component="handlers.callback")
 

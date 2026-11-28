@@ -4,16 +4,16 @@ Enterprise-grade Telegram bot for downloading media from YouTube, SoundCloud, an
 
 ## Features
 
-- **Multi-platform support**: YouTube (videos, playlists, YouTube Music), SoundCloud (tracks, sets, playlists), Instagram (Reels, Posts, Carousels)
+- **Multi-platform support**: YouTube (videos, Shorts, live, YouTube Music), SoundCloud (tracks, sets), Instagram (Reels, Posts)
 - **Format selection**: Audio (MP3) or Video (MP4/WebM)
 - **Quality options**: Best, 1080p, 720p, 480p
 - **Async architecture**: Full asyncio-based design for high concurrency
-- **Per-user queue isolation**: Each user gets their own download queue with backpressure
+- **Per-user concurrency limits**: Each user's simultaneous downloads are capped, with a bounded job queue
 - **Rate limiting**: Configurable per-user rate limits to prevent abuse
-- **User whitelist**: Optional Telegram user ID whitelist for private bots
+- **User whitelist**: Optional Telegram user ID whitelist for private bots, enforced on every handler
 - **Structured logging**: JSON-formatted structured logs for production monitoring
 - **Graceful shutdown**: Clean resource cleanup on termination
-- **Automatic temp file cleanup**: Temporary files are automatically removed after processing
+- **Automatic temp file cleanup**: Temporary files are removed after delivery (or on failure)
 - **Single instance lock**: Prevents multiple bot instances from running simultaneously
 - **FFmpeg integration**: Automatic format conversion when FFmpeg is available
 
@@ -76,13 +76,10 @@ pip install -r requirements.txt
 | `YTDLP_COOKIES_PATH` | (empty) | Path to cookies.txt for authenticated requests |
 | `YTDLP_PROXY` | (empty) | Proxy URL (e.g., `socks5://127.0.0.1:1080`) |
 | `WORKER_POOL_SIZE` | `5` | Number of worker threads |
-| `RETRY_MAX_ATTEMPTS` | `3` | Max retry attempts for failed downloads |
+| `RETRY_MAX_ATTEMPTS` | `3` | Max retry attempts for transient failures |
+| `RETRY_BASE_DELAY` | `1.0` | Base delay in seconds for exponential backoff |
+| `RETRY_MAX_DELAY` | `60.0` | Max delay in seconds for backoff |
 | `WORKER_CONCURRENCY` | `1` | Worker concurrency for deployment |
-
-### Observability
-
-- `SENTRY_DSN`: Sentry DSN for error tracking (optional)
-- `ENABLE_SENTRY`: Enable Sentry integration (optional)
 
 ## Usage
 
@@ -100,9 +97,9 @@ python -m bot.main
 
 | Platform | Content Types |
 |----------|--------------|
-| YouTube | Videos, Playlists, YouTube Music |
-| SoundCloud | Tracks, Sets, Playlists |
-| Instagram | Reels, Posts, Carousels |
+| YouTube | Videos, Shorts, live streams, YouTube Music |
+| SoundCloud | Tracks, Sets |
+| Instagram | Reels, Posts |
 
 ## Project Structure
 
@@ -142,8 +139,6 @@ downloader-bot/
 +-- data/
 ¦   +-- storage/
 ¦       +-- temp/               # Temporary download storage
-+-- deploy/
-¦   +-- downloader-bot.service  # Systemd service file
 +-- infrastructure/
 ¦   +-- __init__.py
 ¦   +-- cache.py                # In-memory caching
@@ -152,11 +147,17 @@ downloader-bot/
 ¦   +-- storage.py              # File lifecycle management
 +-- tests/
 ¦   +-- __init__.py
+¦   +-- conftest.py             # Fake token + temp storage for tests
 ¦   +-- integration/
 ¦   ¦   +-- __init__.py
 ¦   +-- unit/
 ¦       +-- __init__.py
+¦       +-- test_config.py
 ¦       +-- test_exceptions.py
+¦       +-- test_main.py
+¦       +-- test_media_service.py
+¦       +-- test_quality.py
+¦       +-- test_queue.py
 ¦       +-- test_url_parser.py
 +-- .env.example                # Environment template
 +-- .gitignore                  # Git ignore rules
@@ -168,16 +169,9 @@ downloader-bot/
 
 ## Deployment
 
-### Linux with Systemd
-
-```bash
-# Install system dependencies
-sudo apt update
-sudo apt install python3.10 python3.10-venv ffmpeg
-
-# Copy and edit the service file
-sudo nano /etc/systemd/system/downloader-bot.service
-```
+No systemd service file ships with the repository yet. Run the bot
+directly (`python -m bot.main`) under a process supervisor of your
+choice, with a `.env` file next to it.
 
 ### Docker (Coming Soon)
 
@@ -208,12 +202,16 @@ Ensure your `TELEGRAM_BOT_TOKEN` is correct. The bot validates the token on star
 - Consider setting `YTDLP_PROXY` if you're behind a proxy
 
 ### File too large for Telegram
-- Files larger than `MAX_FILE_SIZE_MB` will be uploaded to Telegram as documents
-- Telegram's official limit for media is 50MB
-- Increase `MAX_FILE_SIZE_MB` if needed (files will be sent as documents)
+- Files larger than `MAX_FILE_SIZE_MB` are rejected: the size is
+  checked from the video metadata before downloading, and again
+  after the download finishes. Send a shorter video or pick a
+  lower quality instead.
+- Telegram's official limit for media is 50MB.
 
 ### Rate limited by platform
-- The bot implements exponential backoff and will automatically retry
+- Transient errors (rate limits, 5xx, network failures) are
+  retried with exponential backoff; permanent errors (removed or
+  private videos) fail immediately.
 - Consider adding `YTDLP_COOKIES_PATH` for authenticated requests
 - Use `YTDLP_PROXY` for better reliability
 
@@ -224,11 +222,10 @@ Ensure your `TELEGRAM_BOT_TOKEN` is correct. The bot validates the token on star
 - Age-restricted videos require a cookies.txt file configured via `YTDLP_COOKIES_PATH`
 - Some videos may be geo-restricted; using a proxy via `YTDLP_PROXY` may help
 - YouTube frequently changes their API; keep `yt-dlp` updated for best results
-- Live streams and premieres are not supported
 
 ### General Limitations
 - Maximum concurrent downloads per user is limited by `MAX_CONCURRENT_DOWNLOADS`
-- Very large playlists may take significant time to process
+- Playlists are not supported; send a single video or track link instead
 - Some platforms may require authentication cookies for full access
 
 ## Development

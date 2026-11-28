@@ -6,8 +6,6 @@ graceful shutdown semantics for production deployments.
 """
 
 import asyncio
-import logging
-import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
@@ -44,7 +42,7 @@ class DownloadJob:
     format_type: str = "audio"
     quality: str = "best"
     status: JobStatus = JobStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     result: Any = None

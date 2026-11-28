@@ -5,16 +5,16 @@ Provides reusable keyboard layouts for format selection,
 quality selection, cancellation, and main menu navigation.
 """
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.downloader.base import Quality
 from bot.keyboards.layouts import (
     CANCEL_BUTTON,
     DOWNLOAD_AUDIO_BUTTON,
     DOWNLOAD_VIDEO_BUTTON,
-    QUALITY_1080P_BUTTON,
     QUALITY_480P_BUTTON,
     QUALITY_720P_BUTTON,
+    QUALITY_1080P_BUTTON,
     QUALITY_BEST_BUTTON,
 )
 

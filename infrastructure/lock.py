@@ -1,6 +1,6 @@
 ﻿import os
-import sys
 import signal
+import sys
 from pathlib import Path
 from typing import Optional
 

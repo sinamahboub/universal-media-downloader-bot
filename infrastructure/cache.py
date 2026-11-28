@@ -9,7 +9,7 @@ import asyncio
 import hashlib
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
