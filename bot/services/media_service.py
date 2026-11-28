@@ -265,15 +265,40 @@ class MediaDownloadService:
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            media_info = await downloader.extract_info(job.url)
+            media_info = await asyncio.wait_for(
+                downloader.extract_info(job.url),
+                timeout=settings.DOWNLOAD_TIMEOUT_SECONDS,
+            )
             logger.info("media_info_extracted", job_id=job.job_id, title=media_info.title)
 
-            file_path = await downloader.download(
-                url=job.url,
-                output_path=temp_dir,
-                format_type=format_type,
-                quality=quality,
-                job_id=job.job_id,
+            # Reject before downloading anything: a playlist link, or
+            # a file already known to be bigger than the Telegram
+            # limit, must never start a multi-hundred-megabyte
+            # download that is only checked afterwards.
+            if media_info.is_playlist:
+                raise DownloadFailedError(
+                    "Playlists are not supported. Send a single video or track link.",
+                    job_id=job.job_id,
+                )
+            max_size = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+            if media_info.file_size is not None and media_info.file_size > max_size:
+                raise FileSizeLimitExceededError(
+                    f"File too large: {media_info.file_size / (1024 * 1024):.1f}MB exceeds "
+                    f"{settings.MAX_FILE_SIZE_MB}MB limit",
+                    file_size=media_info.file_size,
+                    limit=max_size,
+                    job_id=job.job_id,
+                )
+
+            file_path = await asyncio.wait_for(
+                downloader.download(
+                    url=job.url,
+                    output_path=temp_dir,
+                    format_type=format_type,
+                    quality=quality,
+                    job_id=job.job_id,
+                ),
+                timeout=settings.DOWNLOAD_TIMEOUT_SECONDS,
             )
 
             if not file_path.exists():
@@ -293,9 +318,15 @@ class MediaDownloadService:
 
             return file_path
 
-        except (MediaExtractionError, DownloadFailedError):
+        except (MediaExtractionError, DownloadFailedError, FileSizeLimitExceededError):
             self.cleanup_job_files(job.job_id)
             raise
+        except TimeoutError as exc:
+            self.cleanup_job_files(job.job_id)
+            raise DownloadFailedError(
+                f"Download timed out after {settings.DOWNLOAD_TIMEOUT_SECONDS}s",
+                job_id=job.job_id,
+            ) from exc
         except Exception as exc:
             self.cleanup_job_files(job.job_id)
             raise DownloadFailedError(f"Download execution failed: {exc}", job_id=job.job_id) from exc

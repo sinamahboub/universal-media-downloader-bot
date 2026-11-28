@@ -8,7 +8,7 @@ fallback link generation when files exceed Telegram limits.
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -117,7 +117,7 @@ class StorageManager:
             file_size=file_size,
             mime_type=mime_type,
             extension=extension,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             user_id=user_id,
             url=url,
         )
@@ -203,7 +203,7 @@ class StorageManager:
         Returns:
             Number of files removed
         """
-        cutoff = datetime.utcnow().timestamp() - self._max_age_seconds
+        cutoff = datetime.now(timezone.utc).timestamp() - self._max_age_seconds
         removed = 0
 
         for job_id, info in list(self._file_registry.items()):

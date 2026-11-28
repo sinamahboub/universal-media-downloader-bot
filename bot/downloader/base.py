@@ -4,14 +4,103 @@
 Defines the interface contract that all platform-specific downloaders must implement.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable, Awaitable, TypeVar
 from dataclasses import dataclass
 from datetime import datetime
 
+import yt_dlp
+
+from core.config import get_settings
 from core.exceptions import MediaExtractionError, DownloadFailedError
+from core.logger import StructuredLogger
+
+logger = StructuredLogger(component="downloader.base")
+
+T = TypeVar("T")
+
+# Substrings that mark an error as transient (worth retrying): rate
+# limits, server errors and network failures. Anything else (a
+# removed video, a private video, an unsupported URL) is permanent
+# and retrying it only burns time and requests.
+_TRANSIENT_MARKERS = (
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+    "timed out",
+    "timeout",
+    "connection reset",
+    "connection aborted",
+    "connection refused",
+    "network is unreachable",
+    "temporary failure",
+    "econnreset",
+    "broken pipe",
+    "remote end closed",
+)
+
+# Errors where another attempt layer (cookies / proxy) might help.
+_AUTH_MARKERS = (
+    "403",
+    "sign in",
+    "log in",
+    "login required",
+    "cookies",
+    "age",
+    "private",
+)
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """Return True when an error is worth retrying with backoff."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
+def is_auth_error(exc: BaseException) -> bool:
+    """Return True when another auth layer might fix the error."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in _AUTH_MARKERS)
+
+
+class YtDlpRunner:
+    """Shared yt-dlp execution for all platform downloaders.
+
+    yt-dlp is blocking, so every call runs in the default executor
+    on the running loop. This replaces the duplicated
+    ``asyncio.get_event_loop().run_in_executor`` blocks that each
+    downloader used to carry (and ``get_event_loop`` is the wrong
+    call inside a coroutine: the running loop is what counts).
+    """
+
+    @staticmethod
+    async def run(func: Callable[[], T]) -> T:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, func)
+
+    @staticmethod
+    async def extract_info(url: str, ydl_opts: Dict[str, Any]) -> dict:
+        def _extract():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=False)
+
+        return await YtDlpRunner.run(_extract)
+
+    @staticmethod
+    async def download(url: str, ydl_opts: Dict[str, Any]) -> Path:
+        def _download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if "requested_downloads" in info:
+                    return Path(info["requested_downloads"][0]["filepath"])
+                return Path(ydl.prepare_filename(info))
+
+        return await YtDlpRunner.run(_download)
 
 
 class Quality(str, Enum):
@@ -192,6 +281,20 @@ class BaseDownloader(ABC):
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
+            # Never follow a playlist: one URL is one file. Without
+            # this a playlist link could download dozens of videos.
+            "noplaylist": True,
+            "max_downloads": 1,
+            # Stop yt-dlp itself from fetching a file bigger than the
+            # Telegram limit (the service also checks before and
+            # after the download; this is the first line of defence).
+            "max_filesize": get_settings().MAX_FILE_SIZE_MB * 1024 * 1024,
+            "socket_timeout": 30,
+            "retries": get_settings().RETRY_MAX_ATTEMPTS,
+            # Titles are user-controlled; restrict the output name to
+            # safe characters (with %(id)s as the name, this is a
+            # second line of defence against path traversal).
+            "restrictfilenames": True,
         }
 
         if postprocessors:
@@ -222,3 +325,79 @@ class BaseDownloader(ABC):
             Quality.P480: "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]",
         }
         return quality_map[parsed]
+
+    async def _with_transient_retry(self, func: Callable[[], Awaitable[T]]) -> T:
+        """Run a coroutine factory, retrying transient errors only.
+
+        Retries use exponential backoff from the RETRY_* settings.
+        A permanent error (removed/private video, bad URL) is raised
+        immediately: retrying it cannot help.
+        """
+        settings = get_settings()
+        last_exc: BaseException | None = None
+        for attempt in range(settings.RETRY_MAX_ATTEMPTS):
+            try:
+                return await func()
+            except Exception as exc:
+                last_exc = exc
+                if not is_transient_error(exc) or attempt == settings.RETRY_MAX_ATTEMPTS - 1:
+                    raise
+                delay = min(
+                    settings.RETRY_BASE_DELAY * (2 ** attempt),
+                    settings.RETRY_MAX_DELAY,
+                )
+                logger.warning(
+                    "transient_error_retrying",
+                    error=str(exc),
+                    attempt=attempt + 1,
+                    delay_seconds=delay,
+                )
+                await asyncio.sleep(delay)
+        assert last_exc is not None
+        raise last_exc
+
+    def _build_simple_media_info(self, url: str, info: dict, default_title: str) -> MediaInfo:
+        """Build MediaInfo from raw yt-dlp info (single-media URLs).
+
+        Shared by the Instagram and SoundCloud downloaders, which
+        used to duplicate this block (including the description
+        crash: ``info.get('description', default)`` returns None
+        when the key exists with a None value, and None[:100]
+        raises TypeError).
+        """
+        is_playlist = info.get("_type") == "playlist" or "entries" in info
+        if is_playlist:
+            title = info.get("title") or default_title
+        else:
+            title = (
+                info.get("title")
+                or (info.get("description") or default_title)[:100]
+            )
+        return MediaInfo(
+            title=title,
+            url=url,
+            platform=self.platform_name,
+            duration=info.get("duration"),
+            thumbnail=info.get("thumbnail"),
+            uploader=info.get("uploader"),
+            view_count=info.get("view_count"),
+            file_size=info.get("filesize") or info.get("filesize_approx"),
+            is_playlist=is_playlist,
+            playlist_count=len(list(info.get("entries", []))) if is_playlist else None,
+        )
+
+    @staticmethod
+    def _resolve_downloaded_file(output_path: Path, file_path: Path, extensions: list[str]) -> Path:
+        """Find the real downloaded file when yt-dlp renamed it.
+
+        Post-processing (e.g. audio extraction) changes the
+        extension, so the reported path may not exist on disk.
+        """
+        if file_path.exists():
+            return file_path
+        base_name = Path(file_path).stem
+        for ext in extensions:
+            candidate = output_path / f"{base_name}{ext}"
+            if candidate.exists():
+                return candidate
+        return file_path

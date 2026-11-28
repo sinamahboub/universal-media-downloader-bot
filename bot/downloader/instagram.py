@@ -1,16 +1,12 @@
 
 """Instagram platform downloader implementation."""
 
-import asyncio
 from pathlib import Path
 
-import yt_dlp
-
-from .base import BaseDownloader, MediaInfo
+from .base import BaseDownloader, MediaInfo, YtDlpRunner
 from core.exceptions import MediaExtractionError, DownloadFailedError
-from core.logger import StructuredLogger
 
-logger = StructuredLogger(component="downloader.instagram")
+_BASIC_OPTS = {"quiet": True, "no_warnings": True, "noplaylist": True}
 
 
 class InstagramDownloader(BaseDownloader):
@@ -19,32 +15,13 @@ class InstagramDownloader(BaseDownloader):
         self.platform_name = "instagram"
 
     async def extract_info(self, url: str) -> MediaInfo:
-        def _extract():
-            ydl_opts = {"quiet": True, "no_warnings": True}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(url, download=False)
-
         try:
-            loop = asyncio.get_event_loop()
-            info = await loop.run_in_executor(None, _extract)
-
-            is_playlist = info.get("_type") == "playlist" or "entries" in info
-
-            if is_playlist:
-                title = info.get("title", "Instagram Post")
-            else:
-                title = info.get("title") or info.get("description", "Instagram Media")[:100]
-
-            return MediaInfo(
-                title=title,
-                url=url,
-                platform=self.platform_name,
-                duration=info.get("duration"),
-                thumbnail=info.get("thumbnail"),
-                uploader=info.get("uploader"),
-                file_size=info.get("filesize") or info.get("filesize_approx"),
-                is_playlist=is_playlist,
+            info = await self._with_transient_retry(
+                lambda: YtDlpRunner.extract_info(url, _BASIC_OPTS)
             )
+            return self._build_simple_media_info(url, info, "Instagram Media")
+        except MediaExtractionError:
+            raise
         except Exception as exc:
             raise MediaExtractionError(f"Failed to extract Instagram info: {exc}", url=url) from exc
 
@@ -52,28 +29,16 @@ class InstagramDownloader(BaseDownloader):
         output_path.mkdir(parents=True, exist_ok=True)
         ydl_opts = self._build_ydl_opts(output_path, format_type, quality, job_id=job_id)
 
-        def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "requested_downloads" in info:
-                    return Path(info["requested_downloads"][0]["filepath"])
-                return Path(ydl.prepare_filename(info))
-
         try:
-            loop = asyncio.get_event_loop()
-            file_path = await loop.run_in_executor(None, _download)
+            file_path = await self._with_transient_retry(
+                lambda: YtDlpRunner.download(url, ydl_opts)
+            )
 
             if self.ffmpeg_available and format_type == "audio":
                 file_path = Path(file_path).with_suffix(".mp3")
 
-            if not file_path.exists():
-                base_name = Path(file_path).stem
-                for ext in [".mp4", ".mp3", ".m4a"]:
-                    candidate = output_path / f"{base_name}{ext}"
-                    if candidate.exists():
-                        file_path = candidate
-                        break
-
-            return file_path
+            return self._resolve_downloaded_file(
+                output_path, file_path, [".mp4", ".mp3", ".m4a"]
+            )
         except Exception as exc:
             raise DownloadFailedError(f"Instagram download failed: {exc}", details={"url": url}) from exc

@@ -11,7 +11,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -44,7 +44,7 @@ class DownloadJob:
     format_type: str = "audio"
     quality: str = "best"
     status: JobStatus = JobStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     result: Any = None
@@ -106,6 +106,17 @@ class AsyncDownloadQueue:
         self._cancelled: set[str] = set()
         self._max_size = settings.JOB_QUEUE_MAX_SIZE
 
+    # Finished-job history is bounded: the old code appended every
+    # finished job forever, so a long-running bot grew memory
+    # without limit (and get_stats() scanned all of it).
+    _MAX_COMPLETED_HISTORY = 1000
+
+    def _prune_completed(self) -> None:
+        """Drop finished jobs older than the history cap."""
+        excess = len(self._completed) - self._MAX_COMPLETED_HISTORY
+        if excess > 0:
+            del self._completed[:excess]
+
     async def enqueue(self, job: DownloadJob) -> DownloadJob:
         """
         Add a job to the queue.
@@ -165,7 +176,7 @@ class AsyncDownloadQueue:
         """Mark job as running and register its task."""
         async with self._lock:
             job.status = JobStatus.RUNNING
-            job.started_at = datetime.utcnow()
+            job.started_at = datetime.now(timezone.utc)
             self._running[job.job_id] = job
             self._active_workers[job.job_id] = task
 
@@ -180,11 +191,12 @@ class AsyncDownloadQueue:
         """Mark job as completed with result."""
         async with self._lock:
             job.status = JobStatus.COMPLETED
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc)
             job.result = result
             self._running.pop(job.job_id, None)
             self._active_workers.pop(job.job_id, None)
             self._completed.append(job)
+            self._prune_completed()
 
             logger.info(
                 "job_completed",
@@ -199,11 +211,12 @@ class AsyncDownloadQueue:
         """Mark job as failed with error message."""
         async with self._lock:
             job.status = JobStatus.FAILED
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc)
             job.error = error
             self._running.pop(job.job_id, None)
             self._active_workers.pop(job.job_id, None)
             self._completed.append(job)
+            self._prune_completed()
 
             logger.error(
                 "job_failed",
@@ -245,7 +258,7 @@ class AsyncDownloadQueue:
                 job = self._running.get(job_id)
                 if job:
                     job.status = JobStatus.CANCELLED
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(timezone.utc)
                     self._completed.append(job)
                     logger.info("job_cancelled_running", job_id=job_id, user_id=job.user_id)
                 return True
@@ -278,7 +291,7 @@ class AsyncDownloadQueue:
                 self._cancelled.add(job_id)
                 task.cancel()
                 job.status = JobStatus.CANCELLED
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc)
                 self._completed.append(job)
                 cancelled_ids.append(job.job_id)
 
