@@ -7,6 +7,7 @@ quality selection, cancellation, and main menu navigation.
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
+from bot.downloader.base import Quality
 from bot.keyboards.layouts import (
     CANCEL_BUTTON,
     DOWNLOAD_AUDIO_BUTTON,
@@ -16,6 +17,13 @@ from bot.keyboards.layouts import (
     QUALITY_720P_BUTTON,
     QUALITY_BEST_BUTTON,
 )
+
+_QUALITY_BUTTONS = {
+    Quality.BEST: QUALITY_BEST_BUTTON,
+    Quality.P1080: QUALITY_1080P_BUTTON,
+    Quality.P720: QUALITY_720P_BUTTON,
+    Quality.P480: QUALITY_480P_BUTTON,
+}
 
 
 def format_keyboard(job_id: str) -> InlineKeyboardMarkup:
@@ -32,7 +40,8 @@ def format_keyboard(job_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text=DOWNLOAD_AUDIO_BUTTON, callback_data=f"fmt:audio:{job_id}"),
             InlineKeyboardButton(text=DOWNLOAD_VIDEO_BUTTON, callback_data=f"fmt:video:{job_id}"),
-        ]
+        ],
+        [InlineKeyboardButton(text=CANCEL_BUTTON, callback_data=f"cancel:{job_id}")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -50,21 +59,24 @@ def quality_keyboard(format_type: str, job_id: str) -> InlineKeyboardMarkup:
     """
     if format_type == "audio":
         keyboard = [
-            [InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{job_id}")]
+            [InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:{Quality.BEST.value}:{job_id}")]
         ]
     else:
         keyboard = [
             [
-                InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:best:{job_id}"),
+                InlineKeyboardButton(text=QUALITY_BEST_BUTTON, callback_data=f"qual:{Quality.BEST.value}:{job_id}"),
             ],
             [
-                InlineKeyboardButton(text=QUALITY_1080P_BUTTON, callback_data=f"qual:1080p:{job_id}"),
-                InlineKeyboardButton(text=QUALITY_720P_BUTTON, callback_data=f"qual:720p:{job_id}"),
+                InlineKeyboardButton(text=QUALITY_1080P_BUTTON, callback_data=f"qual:{Quality.P1080.value}:{job_id}"),
+                InlineKeyboardButton(text=QUALITY_720P_BUTTON, callback_data=f"qual:{Quality.P720.value}:{job_id}"),
             ],
             [
-                InlineKeyboardButton(text=QUALITY_480P_BUTTON, callback_data=f"qual:480p:{job_id}"),
+                InlineKeyboardButton(text=QUALITY_480P_BUTTON, callback_data=f"qual:{Quality.P480.value}:{job_id}"),
             ],
         ]
+    keyboard.append(
+        [InlineKeyboardButton(text=CANCEL_BUTTON, callback_data=f"cancel:{job_id}")]
+    )
 
     return InlineKeyboardMarkup(keyboard)
 

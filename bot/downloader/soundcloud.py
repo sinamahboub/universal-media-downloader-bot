@@ -53,9 +53,9 @@ class SoundCloudDownloader(BaseDownloader):
         except Exception as exc:
             raise MediaExtractionError(f"Failed to extract SoundCloud info: {exc}", url=url) from exc
 
-    async def download(self, url: str, output_path: Path, format_type: str = "audio", quality: str = "best") -> Path:
+    async def download(self, url: str, output_path: Path, format_type: str = "audio", quality: str = "best", job_id: str | None = None) -> Path:
         output_path.mkdir(parents=True, exist_ok=True)
-        ydl_opts = self._build_ydl_opts(output_path, format_type, quality)
+        ydl_opts = self._build_ydl_opts(output_path, format_type, quality, job_id=job_id)
 
         def _download():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

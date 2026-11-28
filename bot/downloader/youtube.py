@@ -38,9 +38,9 @@ class YouTubeDownloader(BaseDownloader):
             url=url,
         ) from last_exc
 
-    async def download(self, url: str, output_path: Path, format_type: str = "audio", quality: str = "best") -> Path:
+    async def download(self, url: str, output_path: Path, format_type: str = "audio", quality: str = "best", job_id: str | None = None) -> Path:
         output_path.mkdir(parents=True, exist_ok=True)
-        ydl_opts = self._build_ydl_opts(output_path, format_type, quality)
+        ydl_opts = self._build_ydl_opts(output_path, format_type, quality, job_id=job_id)
 
         last_exc = None
         for attempt in self._iter_download_attempts(ydl_opts):
@@ -155,9 +155,11 @@ class YouTubeDownloader(BaseDownloader):
         loop = asyncio.get_event_loop()
         file_path = await loop.run_in_executor(None, _download)
 
-        if self.ffmpeg_available and output_path.suffix == ".mp3":
+        # output_path is a directory, so its suffix is always empty;
+        # the post-processed extension lives on the file itself.
+        if self.ffmpeg_available and file_path.suffix == ".mp3":
             file_path = Path(file_path).with_suffix(".mp3")
-        elif self.ffmpeg_available and output_path.suffix == ".mp4":
+        elif self.ffmpeg_available and file_path.suffix == ".mp4":
             file_path = Path(file_path).with_suffix(".mp4")
 
         if not file_path.exists():

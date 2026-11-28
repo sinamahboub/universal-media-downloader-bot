@@ -79,10 +79,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /cancel command."""
-    if "pending_url" in context.user_data:
-        del context.user_data["pending_url"]
-    await update.message.reply_text("Cancelled.")
+    """Handle /cancel command (legacy fallback).
+
+    The registered /cancel handler is MessageHandler.handle_cancel,
+    which cancels the user's downloads for real. This function is
+    kept only so the old name still resolves.
+    """
+    if update.message is not None:
+        await update.message.reply_text("Cancelled.")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -203,7 +207,9 @@ def create_bot_application() -> Application:
 
     application.add_handler(CommandHandler("start", _guarded(start_command, auth)))
     application.add_handler(CommandHandler("help", _guarded(help_command, auth)))
-    application.add_handler(CommandHandler("cancel", _guarded(cancel_command, auth)))
+    # /cancel goes through the message handler so it cancels the
+    # user's pending/running downloads for real.
+    application.add_handler(CommandHandler("cancel", message_handler.handle_cancel))
 
     application.add_handler(
         MessageHandler(
